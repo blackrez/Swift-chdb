@@ -48,7 +48,7 @@ no configuration, no network port. Just link the library and run SQL.
 **Package.swift:**
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-account/Swift-chdb.git", from: "1.0.0")
+    .package(url: "https://github.com/blackrez/Swift-chdb.git", from: "main")
 ]
 ```
 
