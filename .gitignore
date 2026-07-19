@@ -1,0 +1,19 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Binary downloads (downloaded by setup.sh)
+/libchdb.so
+/chdb.xcframework/
+
+# Duplicate CSV test file (use hits.parquet instead)
+/hits.csv
+/hits.parquet
+
+# chDB runtime data directory
+/:memory:

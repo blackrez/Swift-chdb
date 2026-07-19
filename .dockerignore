@@ -1,0 +1,9 @@
+.build/
+.build/**
+chdb.xcframework/
+.git/
+.gitignore
+.DS_Store
+*.dSYM/
+*.dSYM
+hits.csv

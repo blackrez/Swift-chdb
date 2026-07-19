@@ -1,0 +1,1 @@
+INSERT INTO hits SELECT * FROM file('__PARQUET_PATH__')
