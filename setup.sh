@@ -9,7 +9,8 @@
 
 set -euo pipefail
 
-CHDB_VERSION="4.0.2"
+CHDB_VERSION="26.5.0"
+RELEASE_VERSION="26.5.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -45,7 +46,7 @@ download_variant() {
     local variant="$1"
     local suffix
     suffix=$(variant_suffix "$variant")
-    local url="https://github.com/chdb-io/chdb/releases/download/v${CHDB_VERSION}/${suffix}-libchdb.tar.gz"
+    local url="https://github.com/chdb-io/chdb-core/releases/download/v${CHDB_VERSION}/${suffix}-libchdb.tar.gz"
     local tmpdir="/tmp/chdb-variant-${variant}"
     rm -rf "$tmpdir"
     mkdir -p "$tmpdir"
@@ -148,7 +149,7 @@ JSON
         echo >&2 "$cond"
         echo >&2 "let chdbTarget: Target = .binaryTarget("
         echo >&2 "    name: \"Cchdb\","
-        echo >&2 "    url: \"https://github.com/blackrez/Swift-chdb/releases/download/v${CHDB_VERSION}/${zipname}\","
+        echo >&2 "    url: \"https://github.com/blackrez/Swift-chdb/releases/download/v${RELEASE_VERSION}/${zipname}\","
         echo >&2 "    checksum: \"$chksum\""
         echo >&2 ")"
     done
