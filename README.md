@@ -296,21 +296,42 @@ The `Package.swift` auto-detects the platform:
 
 **53/53 ClickHouse types** — parsing, decoding, and JSON conversion.
 
-| Category | Types |
-|----------|-------|
-| Integers | Int8–Int256, UInt8–UInt256 |
-| Floats | Float32, Float64, BFloat16 |
-| Bool | Bool |
-| Date/Time | Date, Date32, DateTime, DateTime64, Time, Time64 |
-| String | String, FixedString(N) |
-| Decimal | Decimal32/64/128/256 |
-| Network | UUID, IPv4, IPv6 |
-| Enum | Enum8, Enum16 |
-| Compound | Array, Tuple, Map, Nested, Nullable, LowCardinality |
-| Geo | Point, Ring, Polygon, MultiPolygon |
-| Modern | Variant, Dynamic, JSON, Object |
-| Aggregate | AggregateFunction, SimpleAggregateFunction |
-| Other | Interval, QBit, Nothing |
+| Category | ClickHouse Types | Swift Type |
+|----------|-----------------|------------|
+| Integers | Int8, Int16, Int32, Int64 | `Int8`, `Int16`, `Int32`, `Int64` |
+| | Int128, Int256 | `String` (hex) |
+| | UInt8, UInt16, UInt32 | `UInt8`, `UInt16`, `UInt32` |
+| | UInt64 | `UInt64` / `NSNumber` |
+| | UInt128, UInt256 | `String` (hex) |
+| Floats | Float32, Float64 | `Float`, `Double` |
+| | BFloat16 | `Float` (converted) |
+| Bool | Bool | `Bool` |
+| Date/Time | Date, Date32 | `Int` (days since epoch) |
+| | DateTime | `Int` (Unix timestamp) |
+| | DateTime64 | `Double` (fractional) |
+| | Time, Time64 | `Int` |
+| String | String | `String` |
+| | FixedString(N) | `String` (padded) |
+| Decimal | Decimal32/64/128/256 | `String` |
+| Network | UUID | `String` (`xxxxxxxx-...`) |
+| | IPv4, IPv6 | `String` |
+| Enum | Enum8, Enum16 | `String` |
+| Compound | Array(T) | `[T]` |
+| | Tuple | `[Any]` or `Decodable` |
+| | Map(K,V) | `[(K, V)]` |
+| | Nullable(T) | `T?` / `NSNull` |
+| | LowCardinality(T) | `T` |
+| Geo | Point | `[Double]` (lat, lon) |
+| | Ring | `[[Double]]` |
+| | Polygon | `[[[Double]]]` |
+| | MultiPolygon | `[[[[Double]]]]` |
+| Modern | Variant, Dynamic | ❌ Not yet supported by C lib |
+| | JSON, Object | `String` (string mode) |
+| Aggregate | AggregateFunction | ❌ Not yet supported by C lib |
+| | SimpleAggregateFunction | inner type |
+| Other | Interval | `Int` |
+| | QBit | `Int` |
+| | Nothing | empty / `nil` |
 
 > ❌ `Variant`, `Dynamic`, `AggregateFunction`: C-level decoding not yet supported by the current library build.
 
