@@ -136,7 +136,7 @@ Full dataset (100M rows, 14 GB) with `--parquet-direct` + native: **~90s**, 43/4
 
 > ⚠️ Full dataset requires `SETTINGS max_bytes_before_external_sort = 0, max_memory_usage = 0` for GROUP BY queries on high-cardinality columns. This is automatically added in `--parquet-direct` mode.
 
-**Benchmark environment:** Apple M1, 8 GB RAM, macOS 26.5.2, Swift 6.3.3, chDB 2.2.1 (326 MB).
+**Benchmark environment:** Apple M1, 8 GB RAM, macOS 26.5.2, Swift 6.3.3, chDB-core 26.5.0.
 
 
 ## 🏛 Architecture
