@@ -33,7 +33,7 @@ let products: [Product] = [
     .library(name: "ClickhouseNative", targets: ["ClickhouseNative"]),
 ]
 
-let baseTargets: [Target] = [
+let targets: [Target] = [
     chdbTarget,
     .target(name: "Cclickhouse"),
     .target(name: "Swift-chdb", dependencies: ["Cchdb", "ClickhouseNative", .product(name: "NIOPosix", package: "swift-nio")]),
@@ -45,13 +45,6 @@ let baseTargets: [Target] = [
     .executableTarget(name: "ChdbClickBenchNative", dependencies: ["Swift-chdb", "ClickhouseNative"], path: "Examples/ChdbClickBenchNative"),
     .testTarget(name: "Swift-chdbTests", dependencies: ["Swift-chdb"]),
 ]
-
-#if os(macOS)
-// ChdbWebDemo requires Apple Network.framework — not available on Linux
-let targets = baseTargets + [.executableTarget(name: "ChdbWebDemo", dependencies: ["Swift-chdb"], path: "Examples/ChdbWebDemo")]
-#else
-let targets = baseTargets
-#endif
 
 let package = Package(
     name: "Swift-chdb",

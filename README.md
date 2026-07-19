@@ -48,16 +48,50 @@ no configuration, no network port. Just link the library and run SQL.
 **Package.swift:**
 ```swift
 dependencies: [
-    .package(url: "https://github.com/blackrez/Swift-chdb.git", from: "main")
+    .package(url: "https://github.com/blackrez/Swift-chdb.git", branch: "main")
 ]
 ```
 
-**Quick setup:**
+Then add `Swift_chdb` (high-level API) and/or `ClickhouseNative` (low-level columnar API) to your target:
+
+```swift
+.target(
+    name: "MyTarget",
+    dependencies: [
+        .product(name: "Swift_chdb", package: "Swift-chdb"),
+        .product(name: "ClickhouseNative", package: "Swift-chdb"),
+    ]
+)
+```
+
+No additional setup needed on macOS — the binary is downloaded automatically by SPM.
+On Linux, install `libchdb` system-wide first:
+
 ```bash
-git clone ... && cd Swift-chdb
-./setup.sh            # Downloads chDB binary for your platform
-swift build           # Build everything
-swift test            # Run tests
+git clone https://github.com/blackrez/Swift-chdb.git
+cd Swift-chdb
+./setup.sh --install     # installs libchdb system-wide via pkg-config
+```
+
+## 🏃‍➡️ Running examples
+
+Examples are included as executable targets (not exposed as products, so they don't affect downstream builds). Run them locally:
+
+```bash
+# Interactive REPL
+swift run --target ChdbRepl
+
+# Native format demo
+swift run --target ChdbNativeDemo
+
+# Stream query demo
+swift run --target ChdbStreamDemo
+
+# ClickBench benchmark (requires hits.parquet)
+swift run --target ChdbClickBench --parquet
+
+# ClickBench with Native format
+swift run --target ChdbClickBenchNative --parquet
 ```
 
 ## 🚀 Quick Start
