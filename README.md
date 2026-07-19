@@ -140,6 +140,12 @@ Full dataset (100M rows, 14 GB) with `--parquet-direct` + native: **~90s**, 43/4
 > chDB is a project of [chdb-io](https://github.com/chdb-io/chdb).  
 > Swift and the Swift logo are trademarks of Apple Inc.  
 > Linux® is a registered trademark of Linus Torvalds.  
+>
+> **Copyrights:** Portions of this software are based on
+> [ClickHouse](https://github.com/ClickHouse/ClickHouse) © 2016-2025 ClickHouse Inc.
+> and [chDB](https://github.com/chdb-io/chdb) © chdb-io,
+> used in accordance with the Apache License, Version 2.0.
+>
 > **Swift-chDB is not affiliated with, endorsed by, or sponsored by ClickHouse Inc.**
 
 ## 🏛 Architecture

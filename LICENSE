@@ -19,3 +19,44 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Third-Party Notices
+
+This project uses the following third-party libraries:
+
+---
+
+ClickHouse
+Copyright 2016-2025 ClickHouse Inc.
+Licensed under the Apache License, Version 2.0 (the "License");
+https://github.com/ClickHouse/ClickHouse
+
+   Apache License
+   Version 2.0, January 2004
+   http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+   [See full text at https://www.apache.org/licenses/LICENSE-2.0]
+
+---
+
+chDB
+Copyright chdb-io
+Licensed under the Apache License, Version 2.0
+https://github.com/chdb-io/chdb
+
+---
+
+swift-nio
+Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
+Licensed under the Apache License, Version 2.0
+https://github.com/apple/swift-nio
+
+---
+
+Swift
+Copyright (c) 2014-2025 Apple Inc.
+Licensed under the Apache License, Version 2.0 with Runtime Library Exception
+https://swift.org
