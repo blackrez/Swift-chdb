@@ -7,11 +7,10 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 
-# Binary downloads (downloaded by setup.sh)
+# Binary downloads (downloaded by setup.sh on Linux)
 /libchdb.so
-/chdb.xcframework/
 
-# Duplicate CSV test file (use hits.parquet instead)
+# Duplicate CSV test file
 /hits.csv
 /hits.parquet
 

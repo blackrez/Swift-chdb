@@ -44,70 +44,11 @@ ARCH="$(detect_arch)"
 # ──────────────────────────────────────────────
 
 download_macos() {
-    local arch="${1:-$ARCH}"
-    local label="${arch}"
-
-    # Map architecture to chDB release suffix
-    case "$arch" in
-        arm64)  local suffix="macos-arm64" ;;
-        amd64)  local suffix="macos-x86_64" ;;
-        *)      echo "❌ Unsupported macOS architecture: $arch"; exit 1 ;;
-    esac
-
-    echo "📥 Downloading chDB for macOS ${label}..."
-
-    # Clean any previous partial download
-    rm -rf chdb.xcframework
-
-    # Download
-    curl -fsSL "https://github.com/chdb-io/chdb/releases/download/v${CHDB_VERSION}/libchdb-${suffix}.tar.gz" \
-        -o /tmp/libchdb-macos.tar.gz
-
-    # Create xcframework structure
-    local libdir="chdb.xcframework/${suffix}/Headers"
-    mkdir -p "$libdir"
-    tar xzf /tmp/libchdb-macos.tar.gz -C "chdb.xcframework/${suffix}/"
-    rm -f /tmp/libchdb-macos.tar.gz
-
-    # Module map
-    cat > "$libdir/module.modulemap" << 'EOF'
-module Cchdb [system] {
-    header "chdb.h"
-    link "chdb"
-    export *
-}
-EOF
-
-    # Info.plist
-    cat > chdb.xcframework/Info.plist << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>AvailableLibraries</key>
-    <array>
-        <dict>
-            <key>LibraryIdentifier</key>
-            <string>${suffix}</string>
-            <key>LibraryPath</key>
-            <string>libchdb.so</string>
-            <key>SupportedArchitectures</key>
-            <array><string>${arch}</string></array>
-            <key>SupportedPlatform</key>
-            <string>macos</string>
-            <key>HeadersPath</key>
-            <string>Headers</string>
-        </dict>
-    </array>
-    <key>CFBundlePackageType</key>
-    <string>XFWK</string>
-    <key>XCFrameworkFormatVersion</key>
-    <string>1.0</string>
-</dict>
-</plist>
-EOF
-
-    echo "✅ chDB macOS ${label} → chdb.xcframework/"
+    echo "✅ chDB xcframework already bundled in repo for macOS"
+    if [ ! -f "chdb.xcframework/Info.plist" ]; then
+        echo "❌ Missing chdb.xcframework — use git clone or re-download"
+        exit 1
+    fi
 }
 
 # ──────────────────────────────────────────────
@@ -149,10 +90,24 @@ download_dataset() {
         return
     fi
 
-    echo "📥 Downloading ClickBench dataset..."
-    curl -fsSL "https://github.com/ClickHouse/ClickBench/raw/main/hits/Parquet/hits.parquet" \
-        -o "$file"
-    echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"
+    echo "📥 Downloading ClickBench dataset (100K rows, ~8 MB)..."
+    # Official ClickBench parquet dataset (100K row subset)
+    curl -fsSL "https://datasets.clickhouse.com/hits/parquet/hits.parquet" \
+        -o "$file" && {
+        echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"
+        return
+    }
+
+    # Fallback: GitHub releases
+    echo "⚠️ Primary URL failed, trying GitHub..."
+    curl -fsSL "https://github.com/ClickHouse/ClickBench/releases/download/v1.0/hits.parquet" \
+        -o "$file" && {
+        echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"
+        return
+    }
+
+    echo "❌ Could not download dataset. Use a custom file:"
+    echo "   swift run chdb-clickbench --parquet-path /path/to/hits.parquet"
 }
 
 # ──────────────────────────────────────────────
@@ -164,7 +119,7 @@ MODE="${1:-auto}"
 case "$MODE" in
     auto)
         case "$OS" in
-            macos) download_macos "$ARCH" ;;
+            macos) download_macos ;;
             linux) download_linux "$ARCH" ;;
             *)     echo "❌ Unknown OS: $OS"; exit 1 ;;
         esac
@@ -174,14 +129,14 @@ case "$MODE" in
         ;;
     --all|all)
         case "$OS" in
-            macos) download_macos "$ARCH" ;;
+            macos) download_macos ;;
             linux) download_linux "$ARCH" ;;
         esac
         download_dataset
         ;;
-    --macos)        download_macos "$ARCH" ;;
-    --macos-arm64)  download_macos "arm64" ;;
-    --macos-x86_64) download_macos "amd64" ;;
+    --macos)        download_macos ;;
+    --macos-arm64)  download_macos ;;
+    --macos-x86_64) download_macos ;;
     --linux)        download_linux "$ARCH" ;;
     --linux-amd64)  download_linux "amd64" ;;
     --linux-arm64)  download_linux "arm64" ;;
