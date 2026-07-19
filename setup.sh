@@ -120,8 +120,8 @@ EOF
                     "path": "${variant}/libchdb.${ext}",
                     "supportedTriples": ["${triple}"],
                     "staticLibraryMetadata": {
-                        "moduleMapPath": "module.modulemap",
-                        "headerPaths": ["chdb.h"]
+                        "moduleMapPath": "${variant}/module.modulemap",
+                        "headerPaths": ["${variant}/chdb.h"]
                     }
                 }
             ]
