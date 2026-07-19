@@ -98,7 +98,7 @@ let users: [User] = try await db.query("SELECT id, name FROM users")
 
 ## 📊 ClickBench — Analytical Benchmark
 
-note : This benchmark was done on a Macbook M1 with 8GB of RAM, it does not reflect the real clickbench result.
+note : This does not reflect the real clickbench result and conditions.
 
 ```bash
 # MergeTree mode (default) — imports hits.parquet then runs 43 queries
