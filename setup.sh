@@ -42,6 +42,14 @@ target_triple() {
     esac
 }
 
+lib_extension() {
+    case "$1" in
+        macos-*) echo "dylib" ;;
+        linux-*) echo "so" ;;
+        *) echo "so"; exit 1 ;;
+    esac
+}
+
 download_variant() {
     local variant="$1"
     local suffix
@@ -76,14 +84,18 @@ build_artifactbundle() {
         }
         local triple
         triple=$(target_triple "$variant")
+        local ext
+        ext=$(lib_extension "$variant")
         local name="Cchdb-${variant}.artifactbundle"
         local dir="${name}/${variant}"
 
         rm -rf "$name"
         mkdir -p "$dir"
 
-        # Copy binary and header
-        cp "$tmpdir/libchdb.so" "$dir/"
+        # Copy binary with correct platform extension
+        cp "$tmpdir/libchdb.so" "$dir/libchdb.${ext}"
+
+        # Copy header
         [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" "$dir/"
 
         # Create modulemap
@@ -105,7 +117,7 @@ EOF
             "type": "dynamicLibrary",
             "variants": [
                 {
-                    "path": "${variant}/libchdb.so",
+                    "path": "${variant}/libchdb.${ext}",
                     "supportedTriples": ["${triple}"]
                 }
             ]
