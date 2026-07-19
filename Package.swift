@@ -31,14 +31,9 @@ let chdbTarget: Target = .binaryTarget(
 let products: [Product] = [
     .library(name: "Swift-chdb", targets: ["Swift-chdb"]),
     .library(name: "ClickhouseNative", targets: ["ClickhouseNative"]),
-    .executable(name: "chdb-repl", targets: ["ChdbRepl"]),
-    .executable(name: "chdb-native-demo", targets: ["ChdbNativeDemo"]),
-    .executable(name: "chdb-stream-demo", targets: ["ChdbStreamDemo"]),
-    .executable(name: "chdb-clickbench", targets: ["ChdbClickBench"]),
-    .executable(name: "chdb-clickbench-native", targets: ["ChdbClickBenchNative"]),
 ]
 
-let targets: [Target] = [
+let baseTargets: [Target] = [
     chdbTarget,
     .target(name: "Cclickhouse"),
     .target(name: "Swift-chdb", dependencies: ["Cchdb", "ClickhouseNative", .product(name: "NIOPosix", package: "swift-nio")]),
@@ -53,20 +48,18 @@ let targets: [Target] = [
 
 #if os(macOS)
 // ChdbWebDemo requires Apple Network.framework — not available on Linux
-let allProducts = products + [.executable(name: "chdb-web-demo", targets: ["ChdbWebDemo"])]
-let allTargets = targets + [.executableTarget(name: "ChdbWebDemo", dependencies: ["Swift-chdb"], path: "Examples/ChdbWebDemo")]
+let targets = baseTargets + [.executableTarget(name: "ChdbWebDemo", dependencies: ["Swift-chdb"], path: "Examples/ChdbWebDemo")]
 #else
-let allProducts = products
-let allTargets = targets
+let targets = baseTargets
 #endif
 
 let package = Package(
     name: "Swift-chdb",
     platforms: [.macOS(.v10_15)],
-    products: allProducts,
+    products: products,
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
     ],
-    targets: allTargets,
+    targets: targets,
     swiftLanguageModes: [.v6]
 )
