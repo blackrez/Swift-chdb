@@ -114,10 +114,10 @@ EOF
 }
 JSON
 
-        # Zip
+        # Zip (plain zip to avoid macOS metadata issues)
         local zipname="${name}.zip"
         rm -f "$zipname"
-        ditto -c -k --sequesterRsrc --keepParent "$name" "$zipname"
+        zip -r --symlinks "$zipname" "$name"
         local chksum
         chksum=$(shasum -a 256 "$zipname" | awk '{print $1}')
         local size
