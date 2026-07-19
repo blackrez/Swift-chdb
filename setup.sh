@@ -114,11 +114,15 @@ EOF
     "artifacts": {
         "Cchdb": {
             "version": "${CHDB_VERSION}",
-            "type": "dynamicLibrary",
+            "type": "staticLibrary",
             "variants": [
                 {
                     "path": "${variant}/libchdb.${ext}",
-                    "supportedTriples": ["${triple}"]
+                    "supportedTriples": ["${triple}"],
+                    "staticLibraryMetadata": {
+                        "moduleMapPath": "module.modulemap",
+                        "headerPaths": ["chdb.h"]
+                    }
                 }
             ]
         }

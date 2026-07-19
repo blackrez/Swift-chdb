@@ -6,25 +6,25 @@ import PackageDescription
 let chdbTarget: Target = .binaryTarget(
     name: "Cchdb",
     url: "https://github.com/blackrez/Swift-chdb/releases/download/v26.5.0/Cchdb-macos-arm64.artifactbundle.zip",
-    checksum: "efaa34ac38aceb6733b7b7b818538ddc6fa144105a0bc4f0e94bae2c66ca6eac"
+    checksum: "6e4f50abb25aa1902f677d8fc477b9dd682d72bedafecba6dff1953804449e2f"
 )
 #elseif os(macOS) && arch(x86_64)
 let chdbTarget: Target = .binaryTarget(
     name: "Cchdb",
     url: "https://github.com/blackrez/Swift-chdb/releases/download/v26.5.0/Cchdb-macos-x86_64.artifactbundle.zip",
-    checksum: "eb1ddf544d864587d809d3a3bf5fac0454375af4da0111f27d6b6ff5017d2800"
+    checksum: "6cb84da5f31696be3b1bc811186c9093cb8fcc750f1c3fe925df3934dc3c0804"
 )
 #elseif os(Linux) && arch(x86_64)
 let chdbTarget: Target = .binaryTarget(
     name: "Cchdb",
     url: "https://github.com/blackrez/Swift-chdb/releases/download/v26.5.0/Cchdb-linux-x86_64.artifactbundle.zip",
-    checksum: "3854e623bdc0dd6bba55d8a90c5fcd0f58f7d35b6cefe1026b3553bd02debcd0"
+    checksum: "424af64424dc3b17fa6e02960a39e2c851d08ef979cdd898d841e7d9f235c398"
 )
 #elseif os(Linux) && arch(arm64)
 let chdbTarget: Target = .binaryTarget(
     name: "Cchdb",
     url: "https://github.com/blackrez/Swift-chdb/releases/download/v26.5.0/Cchdb-linux-aarch64.artifactbundle.zip",
-    checksum: "69614bc99365b415e397bab14f0e7d281ecad9e16b3e542f6d190ee8ae7e2269"
+    checksum: "94a58a8f1d606698fe1862f9e911b66e67ff40b41695c5cf915c9df35ed34721"
 )
 #endif
 
