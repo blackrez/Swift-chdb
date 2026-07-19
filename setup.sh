@@ -1,147 +1,233 @@
 #!/bin/bash
-# Setup script for Swift-chDB — downloads chDB binaries + test dataset.
-#
+# Setup script for Swift-chDB — downloads chDB binaries + SPM artifact bundle.
 # Usage:
-#   ./setup.sh                        # chDB binary (auto-detect OS + arch)
-#   ./setup.sh --dataset              # Download test dataset (hits.parquet)
-#   ./setup.sh --all                  # Binary + dataset
-#   ./setup.sh --macos-arm64
-#   ./setup.sh --macos-x86_64
-#   ./setup.sh --linux-amd64
-#   ./setup.sh --linux-arm64
+#   ./setup.sh                          # download current platform variant
+#   ./setup.sh --dataset                # download hits.parquet
+#   ./setup.sh --all                    # current variant + dataset
+#   ./setup.sh --build-bundle           # download ALL variants & build artifact bundle
+#   ./setup.sh --install                # Linux: install libchdb.so system-wide
 
 set -euo pipefail
 
-CHDB_VERSION="2.2.1"
+CHDB_VERSION="4.0.2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+detect_os()   { case "$(uname -s)" in Darwin*) echo macos ;; Linux*) echo linux ;; *) echo unknown ;; esac; }
+detect_arch() { case "$(uname -m)" in arm64|aarch64) echo arm64 ;; x86_64|amd64) echo amd64 ;; *) echo unknown ;; esac; }
+OS=$(detect_os); ARCH=$(detect_arch)
+
 # ──────────────────────────────────────────────
-# Detection
+# Helpers
 # ──────────────────────────────────────────────
 
-detect_os() {
-    case "$(uname -s)" in
-        Darwin*) echo "macos" ;;
-        Linux*)  echo "linux" ;;
-        *)       echo "unknown" ;;
+variant_suffix() {
+    case "$1" in
+        macos-arm64)   echo "macos-arm64" ;;
+        macos-x86_64)  echo "macos-x86_64" ;;
+        linux-x86_64)  echo "linux-x86_64" ;;
+        linux-aarch64) echo "linux-aarch64" ;;
+        *) echo "unknown"; exit 1 ;;
     esac
 }
 
-detect_arch() {
-    case "$(uname -m)" in
-        arm64|aarch64) echo "arm64" ;;
-        x86_64|amd64)  echo "amd64" ;;
-        *)             echo "unknown" ;;
+target_triple() {
+    case "$1" in
+        macos-arm64)   echo "arm64-apple-macosx" ;;
+        macos-x86_64)  echo "x86_64-apple-macosx" ;;
+        linux-x86_64)  echo "x86_64-unknown-linux-gnu" ;;
+        linux-aarch64) echo "aarch64-unknown-linux-gnu" ;;
+        *) echo "unknown"; exit 1 ;;
     esac
 }
 
-OS="$(detect_os)"
-ARCH="$(detect_arch)"
+download_variant() {
+    local variant="$1"
+    local suffix
+    suffix=$(variant_suffix "$variant")
+    local url="https://github.com/chdb-io/chdb/releases/download/v${CHDB_VERSION}/${suffix}-libchdb.tar.gz"
+    local tmpdir="/tmp/chdb-variant-${variant}"
+    rm -rf "$tmpdir"
+    mkdir -p "$tmpdir"
+    echo >&2 "📥 Downloading ${variant}..."
+    curl -fsSL "$url" -o "/tmp/${variant}.tar.gz"
+    tar xzf "/tmp/${variant}.tar.gz" -C "$tmpdir"
+    rm -f "/tmp/${variant}.tar.gz"
+    echo "$tmpdir"
+}
 
 # ──────────────────────────────────────────────
-# macOS — télécharge et crée chdb.xcframework
+# Build artifact bundle (all platforms)
 # ──────────────────────────────────────────────
 
-download_macos() {
-    echo "✅ chDB xcframework already bundled in repo for macOS"
-    if [ ! -f "chdb.xcframework/Info.plist" ]; then
-        echo "❌ Missing chdb.xcframework — use git clone or re-download"
-        exit 1
+build_artifactbundle() {
+    local variants=("$@")
+    [ ${#variants[@]} -eq 0 ] && variants=("macos-arm64" "macos-x86_64" "linux-x86_64" "linux-aarch64")
+
+    local checksums=()
+
+    for variant in "${variants[@]}"; do
+        local tmpdir
+        tmpdir=$(download_variant "$variant") || {
+            echo >&2 "⚠️  Skipping ${variant} (download failed)"
+            rm -rf "$tmpdir" 2>/dev/null || true
+            continue
+        }
+        local triple
+        triple=$(target_triple "$variant")
+        local name="Cchdb-${variant}.artifactbundle"
+        local dir="${name}/${variant}"
+
+        rm -rf "$name"
+        mkdir -p "$dir"
+
+        # Copy binary and header
+        cp "$tmpdir/libchdb.so" "$dir/"
+        [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" "$dir/"
+
+        # Create modulemap
+        cat > "$dir/module.modulemap" << 'EOF'
+module Cchdb [system] {
+    header "chdb.h"
+    link "chdb"
+    export *
+}
+EOF
+
+        # Create info.json
+        cat > "$name/info.json" << JSON
+{
+    "schemaVersion": "1.0",
+    "artifacts": {
+        "Cchdb": {
+            "version": "${CHDB_VERSION}",
+            "type": "dynamicLibrary",
+            "variants": [
+                {
+                    "path": "${variant}/libchdb.so",
+                    "supportedTriples": ["${triple}"]
+                }
+            ]
+        }
+    }
+}
+JSON
+
+        # Zip
+        local zipname="${name}.zip"
+        rm -f "$zipname"
+        ditto -c -k --sequesterRsrc --keepParent "$name" "$zipname"
+        local chksum
+        chksum=$(shasum -a 256 "$zipname" | awk '{print $1}')
+        local size
+        size=$(ls -lh "$zipname" | awk '{print $5}')
+
+        echo >&2 "  ✅ ${zipname} (${size})  sha256: ${chksum}"
+
+        # Save for final summary
+        checksums+=("${variant}|${zipname}|${chksum}|${triple}")
+
+        rm -rf "$tmpdir" "$name"
+    done
+
+    echo >&2 ""
+    echo >&2 "────────────────────────────────────────────"
+    echo >&2 "  Update Package.swift with these values:"
+    echo >&2 "────────────────────────────────────────────"
+    echo >&2 ""
+
+    for entry in "${checksums[@]}"; do
+        IFS='|' read -r variant zipname chksum triple <<< "$entry"
+        # Map variant to os/arch condition
+        case "$variant" in
+            macos-arm64)   cond="#if os(macOS) && arch(arm64)" ;;
+            macos-x86_64)  cond="#elseif os(macOS) && arch(x86_64)" ;;
+            linux-x86_64)  cond="#elseif os(Linux) && arch(x86_64)" ;;
+            linux-aarch64) cond="#elseif os(Linux) && arch(arm64)" ;;
+        esac
+        echo >&2 "$cond"
+        echo >&2 "let chdbTarget: Target = .binaryTarget("
+        echo >&2 "    name: \"Cchdb\","
+        echo >&2 "    url: \"https://github.com/blackrez/Swift-chdb/releases/download/v${CHDB_VERSION}/${zipname}\","
+        echo >&2 "    checksum: \"$chksum\""
+        echo >&2 ")"
+    done
+    echo >&2 "#endif"
+}
+
+# ──────────────────────────────────────────────
+# Download single variant (for local dev)
+# ──────────────────────────────────────────────
+
+download_current() {
+    case "$OS" in
+        macos) variant="macos-${ARCH}" ;;
+        linux) variant="linux-${ARCH}" ;;
+        *) echo "❌ Unsupported platform: $OS $ARCH"; exit 1 ;;
+    esac
+    local tmpdir
+    tmpdir=$(download_variant "$variant")
+    rm -rf chdb.xcframework Cchdb.artifactbundle libchdb.so chdb.h
+    mkdir -p "Cchdb.artifactbundle/${variant}"
+    cp "$tmpdir/libchdb.so" "Cchdb.artifactbundle/${variant}/"
+    [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" .
+    rm -rf "$tmpdir"
+    echo "✅ ${variant} → Cchdb.artifactbundle/${variant}/libchdb.so ($(ls -lh "Cchdb.artifactbundle/${variant}/libchdb.so" | awk '{print $5}'))"
+}
+
+# ──────────────────────────────────────────────
+# Linux — install libchdb.so system-wide + pkg-config
+# ──────────────────────────────────────────────
+
+install_linux() {
+    if [ ! -f libchdb.so ]; then
+        echo "📥 libchdb.so not found locally, downloading first..."
+        download_current
     fi
+    local prefix="/usr/local"
+    echo "📦 Installing libchdb.so → ${prefix}/lib/ ..."
+    sudo mkdir -p "${prefix}/lib" "${prefix}/include" "${prefix}/lib/pkgconfig"
+    sudo cp libchdb.so "${prefix}/lib/"
+    [ -f chdb.h ] && sudo cp chdb.h "${prefix}/include/"
+    sudo tee "${prefix}/lib/pkgconfig/chdb.pc" > /dev/null << EOF
+prefix=${prefix}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: chdb
+Description: chDB embedded OLAP SQL engine
+Version: ${CHDB_VERSION}
+Libs: -L\${libdir} -lchdb
+Cflags: -I\${includedir}
+EOF
+    echo "✅ chDB installed system-wide (${prefix}/lib/libchdb.so)"
+    echo "   pkg-config: ${prefix}/lib/pkgconfig/chdb.pc"
+    echo ""
+    echo "Verify with: pkg-config --libs --cflags chdb"
 }
 
 # ──────────────────────────────────────────────
-# Linux — télécharge libchdb.so + chdb.h
-# ──────────────────────────────────────────────
-
-download_linux() {
-    local arch="${1:-$ARCH}"
-    local label="${arch}"
-
-    # Map architecture to chDB release suffix
-    case "$arch" in
-        arm64)  local suffix="linux-arm64" ;;
-        amd64)  local suffix="linux-amd64" ;;
-        *)      echo "❌ Unsupported Linux architecture: $arch"; exit 1 ;;
-    esac
-
-    echo "📥 Downloading chDB for Linux ${label}..."
-
-    curl -fsSL "https://github.com/chdb-io/chdb/releases/download/v${CHDB_VERSION}/libchdb-${suffix}.tar.gz" \
-        -o /tmp/libchdb-linux.tar.gz
-    tar xzf /tmp/libchdb-linux.tar.gz -C /tmp/
-    cp /tmp/libchdb.so .
-    cp /tmp/chdb.h .
-    rm -rf /tmp/libchdb*
-
-    echo "✅ libchdb.so ($(ls -lh libchdb.so | awk '{print $5}')) for Linux ${label}"
-}
-
-# ──────────────────────────────────────────────
-# Dataset — télécharge hits.parquet (ClickBench)
+# Dataset
 # ──────────────────────────────────────────────
 
 download_dataset() {
     local file="hits.parquet"
-
-    if [ -f "$file" ]; then
-        echo "📄 $file already exists ($(ls -lh "$file" | awk '{print $5}'))"
-        return
-    fi
-
+    [ -f "$file" ] && echo "📄 $file already exists ($(ls -lh "$file" | awk '{print $5}'))" && return
     echo "📥 Downloading ClickBench dataset (100K rows, ~8 MB)..."
-    # Official ClickBench parquet dataset (100K row subset)
-    curl -fsSL "https://datasets.clickhouse.com/hits/parquet/hits.parquet" \
-        -o "$file" && {
-        echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"
-        return
-    }
-
-    # Fallback: GitHub releases
-    echo "⚠️ Primary URL failed, trying GitHub..."
-    curl -fsSL "https://github.com/ClickHouse/ClickBench/releases/download/v1.0/hits.parquet" \
-        -o "$file" && {
-        echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"
-        return
-    }
-
-    echo "❌ Could not download dataset. Use a custom file:"
-    echo "   swift run chdb-clickbench --parquet-path /path/to/hits.parquet"
+    curl -fsSL "https://datasets.clickhouse.com/hits/parquet/hits.parquet" -o "$file" && { echo "✅ $file ($(ls -lh "$file" | awk '{print $5}'))"; return; }
+    echo "❌ Could not download. Use: swift run chdb-clickbench --parquet-path /path/to/hits.parquet"
 }
 
 # ──────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────
 
-MODE="${1:-auto}"
-
-case "$MODE" in
-    auto)
-        case "$OS" in
-            macos) download_macos ;;
-            linux) download_linux "$ARCH" ;;
-            *)     echo "❌ Unknown OS: $OS"; exit 1 ;;
-        esac
-        ;;
-    --dataset|dataset)
-        download_dataset
-        ;;
-    --all|all)
-        case "$OS" in
-            macos) download_macos ;;
-            linux) download_linux "$ARCH" ;;
-        esac
-        download_dataset
-        ;;
-    --macos)        download_macos ;;
-    --macos-arm64)  download_macos ;;
-    --macos-x86_64) download_macos ;;
-    --linux)        download_linux "$ARCH" ;;
-    --linux-amd64)  download_linux "amd64" ;;
-    --linux-arm64)  download_linux "arm64" ;;
-    *)
-        echo "Usage: $0 [--macos-arm64|--macos-x86_64|--linux-amd64|--linux-arm64|--dataset|--all]"
-        exit 1
-        ;;
+case "${1:-auto}" in
+    auto|--current)          download_current ;;
+    --dataset|dataset)       download_dataset ;;
+    --all|all)               download_current; download_dataset ;;
+    --build-bundle)          build_artifactbundle ;;
+    --install)               install_linux ;;
+    *) echo "Usage: $0 [--current|--dataset|--all|--build-bundle|--install]"; exit 1 ;;
 esac
