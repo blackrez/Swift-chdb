@@ -43,22 +43,18 @@ target_triple() {
 }
 
 lib_extension() {
-    case "$1" in
-        macos-*) echo "dylib" ;;
-        linux-*) echo "so" ;;
-        *) echo "so"; exit 1 ;;
-    esac
+    echo "a"
 }
 
 download_variant() {
     local variant="$1"
     local suffix
     suffix=$(variant_suffix "$variant")
-    local url="https://github.com/chdb-io/chdb-core/releases/download/v${CHDB_VERSION}/${suffix}-libchdb.tar.gz"
+    local url="https://github.com/chdb-io/chdb-core/releases/download/v${CHDB_VERSION}/${suffix}-libchdb-static.tar.gz"
     local tmpdir="/tmp/chdb-variant-${variant}"
     rm -rf "$tmpdir"
     mkdir -p "$tmpdir"
-    echo >&2 "📥 Downloading ${variant}..."
+    echo >&2 "📥 Downloading ${variant} (static)..."
     curl -fsSL "$url" -o "/tmp/${variant}.tar.gz"
     tar xzf "/tmp/${variant}.tar.gz" -C "$tmpdir"
     rm -f "/tmp/${variant}.tar.gz"
@@ -93,7 +89,7 @@ build_artifactbundle() {
         mkdir -p "$dir"
 
         # Copy binary with correct platform extension
-        cp "$tmpdir/libchdb.so" "$dir/libchdb.${ext}"
+        cp "$tmpdir/libchdb.a" "$dir/libchdb.a"
 
         # Copy header
         [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" "$dir/"
@@ -184,9 +180,9 @@ download_current() {
     esac
     local tmpdir
     tmpdir=$(download_variant "$variant")
-    rm -rf chdb.xcframework Cchdb.artifactbundle libchdb.so chdb.h
+    rm -rf chdb.xcframework Cchdb.artifactbundle libchdb.a libchdb.so chdb.h
     mkdir -p "Cchdb.artifactbundle/${variant}"
-    cp "$tmpdir/libchdb.so" "Cchdb.artifactbundle/${variant}/"
+    cp "$tmpdir/libchdb.a" "Cchdb.artifactbundle/${variant}/"
     [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" .
     rm -rf "$tmpdir"
     echo "✅ ${variant} → Cchdb.artifactbundle/${variant}/libchdb.so ($(ls -lh "Cchdb.artifactbundle/${variant}/libchdb.so" | awk '{print $5}'))"
