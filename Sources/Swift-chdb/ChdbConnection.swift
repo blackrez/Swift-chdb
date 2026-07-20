@@ -60,7 +60,7 @@ public actor ChdbConnection {
     public nonisolated var isPersistent: Bool { databasePath != ":memory:" }
     public var defaultEngine: ChdbEngine = .memory
 
-    public init(path: String = ":memory:") throws {
+    public init(path: String = ":memory:", config: String? = nil) throws {
         self.databasePath = path
         let coreCount = ProcessInfo.processInfo.processorCount
         self.readPool = NIOThreadPool(numberOfThreads: max(coreCount, 2))
@@ -68,7 +68,8 @@ public actor ChdbConnection {
         self.readPool.start()
         self.writePool.start()
 
-        let args = ["chdb", "--path=\(path)"]
+        var args = ["chdb", "--path=\(path)"]
+        if let config { args.append("--config-file=\(config)") }
         var cargs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) }
         defer { cargs.forEach { free($0) } }
         let ptr = cargs.withUnsafeMutableBufferPointer { buf in

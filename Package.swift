@@ -43,6 +43,7 @@ let targets: [Target] = [
     .executableTarget(name: "ChdbStreamDemo", dependencies: ["Swift-chdb", "ClickhouseNative"], path: "Examples/ChdbStreamDemo"),
     .executableTarget(name: "ChdbClickBench", dependencies: ["Swift-chdb", "ClickhouseNative"], path: "Examples/ChdbClickBench"),
     .executableTarget(name: "ChdbClickBenchNative", dependencies: ["Swift-chdb", "ClickhouseNative"], path: "Examples/ChdbClickBenchNative"),
+    .executableTarget(name: "ChdbS3Demo", dependencies: ["Swift-chdb"], path: "Examples/ChdbS3Demo"),
     .testTarget(name: "Swift-chdbTests", dependencies: ["Swift-chdb"]),
 ]
 

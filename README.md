@@ -92,6 +92,13 @@ swift run --target ChdbClickBench --parquet
 
 # ClickBench with Native format
 swift run --target ChdbClickBenchNative --parquet
+
+# S3-backed storage demo (requires env vars)
+export S3_BUCKET=my-bucket
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION=eu-west-1
+swift run --target ChdbS3Demo
 ```
 
 ## 🚀 Quick Start
