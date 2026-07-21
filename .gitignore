@@ -26,3 +26,4 @@ DerivedData/
 
 # chDB runtime data directory
 /:memory:
+scripts/garage-env.sh

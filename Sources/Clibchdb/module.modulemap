@@ -1,6 +1,5 @@
 module Cchdb [system] {
     header "include/chdb.h"
-    link "chdb"
 
     export *
 }

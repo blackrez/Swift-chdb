@@ -41,18 +41,29 @@ no configuration, no network port. Just link the library and run SQL.
 - NIOThreadPool for non-blocking query execution
 - ColumnarDecoder for zero-copy native format decoding
 - Full support for 53 ClickHouse data types
-- MergeTree, Memory, ReplacingMergeTree, and 15+ table engines
+- MergeTree, Memory, and 45+ table engines (MergeTree family, Log, Kafka, S3, MySQL, PostgreSQL, EmbeddedRocksDB, SQLite, etc.)
 
 ## 📦 Installation
 
-**Package.swift:**
+**Prerequisites:** Download the chDB dynamic library into the project:
+
+```bash
+./setup.sh --current-dynamic
+```
+
+This downloads `libchdb.dylib` (or `.so` on Linux) from chdb-core releases
+and places it in `.local/lib/` inside the project. The build links it directly —
+**no pkg-config, no system install required.**
+
+Then add to your `Package.swift`:
+
 ```swift
 dependencies: [
     .package(url: "https://github.com/blackrez/Swift-chdb.git", branch: "main")
 ]
 ```
 
-Then add `Swift_chdb` (high-level API) and/or `ClickhouseNative` (low-level columnar API) to your target:
+And to your target:
 
 ```swift
 .target(
@@ -64,14 +75,12 @@ Then add `Swift_chdb` (high-level API) and/or `ClickhouseNative` (low-level colu
 )
 ```
 
-No additional setup needed on macOS — the binary is downloaded automatically by SPM.
-On Linux, install `libchdb` system-wide first:
+> 💡 On Linux, add `libchdb.so` to your library path:
+> `sudo ldconfig && swift build`
 
-```bash
-git clone https://github.com/blackrez/Swift-chdb.git
-cd Swift-chdb
-./setup.sh --install     # installs libchdb system-wide via pkg-config
-```
+> **How it works:** `Package.swift` computes the absolute path to `.local/lib/libchdb.dylib`
+> using `#filePath`, so the linker always finds the correct dylib regardless of
+> the consumer's working directory. No pkg-config or system-wide install needed.
 
 ## 🏃‍➡️ Running examples
 
@@ -79,26 +88,30 @@ Examples are included as executable targets (not exposed as products, so they do
 
 ```bash
 # Interactive REPL
-swift run --target ChdbRepl
+swift run ChdbRepl
 
 # Native format demo
-swift run --target ChdbNativeDemo
+swift run ChdbNativeDemo
 
 # Stream query demo
-swift run --target ChdbStreamDemo
+swift run ChdbStreamDemo
 
 # ClickBench benchmark (requires hits.parquet)
-swift run --target ChdbClickBench --parquet
+swift run ChdbClickBench --parquet
 
 # ClickBench with Native format
-swift run --target ChdbClickBenchNative --parquet
+swift run ChdbClickBenchNative --parquet
 
 # S3-backed storage demo (requires env vars)
 export S3_BUCKET=my-bucket
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 export AWS_REGION=eu-west-1
-swift run --target ChdbS3Demo
+swift run ChdbS3Demo
+
+# AWS Lambda deployment (see Examples/ChdbLambda/)
+cd Examples/ChdbLambda
+./scripts/build-and-deploy.sh
 ```
 
 ## 🚀 Quick Start
@@ -189,50 +202,51 @@ Full dataset (100M rows, 14 GB) with `--parquet-direct` + native: **~90s**, 43/4
 ├──────────────────────────────────────────────────────┤
 │          ChdbConnection (Actor)                       │
 │                                                       │
-│  ┌─────────────────┐       ┌──────────────────────┐  │
-│  │  _readCtx()      │ ───→ │ readPool (N threads)  │  │
-│  │  + alive flag    │       │ chdb_query() → SELECT │  │
-│  │  (nonisolated)   │       └──────────────────────┘  │
-│  └─────────────────┘                                  │
-│  ┌─────────────────┐       ┌──────────────────────┐  │
-│  │  _writeQuery()   │ ───→ │ writePool (1 thread)  │  │
-│  │  (actor-isolated)│       │ chdb_query() → INSERT │  │
-│  └─────────────────┘       └──────────────────────┘  │
+│  ┌─────────────────────┐  ┌──────────────────────┐   │
+│  │  query()            │  │  streamQuery()        │   │
+│  │  → chdb_query()     │  │  → chdb_stream_query()│   │
+│  │  (buffered)         │  │  → AsyncThrowingStream│   │
+│  └─────────┬───────────┘  └───────────┬──────────┘   │
+│            │                          │               │
+│  ┌─────────▼──────────────────────────▼───────────┐   │
+│  │          queryPool (1 NIO thread)               │   │
+│  │  Serialised C calls — chDB is not reentrant     │   │
+│  └────────────────────────────────────────────────┘   │
 ├──────────────────────────────────────────────────────┤
 │              ClickhouseNative                         │
 │  ┌────────────────┐  ┌──────────────────────────┐    │
 │  │ ClickhouseBlock │  │ ColumnarDecoder           │    │
 │  │ (columnar data) │─→│ (Decodable, zero JSON,   │    │
-│  │  + zero-copy    │  │  53/53 types, zéro copie)│    │
+│  │  + zero-copy    │  │  53/53 types)            │    │
 │  └────────────────┘  └──────────────────────────┘    │
 ├──────────────────────────────────────────────────────┤
-│              C chDB (libchdb.so)                      │
-│         chdb_query(), chdb_connect()                  │
+│              C chDB (libchdb.dylib)                   │
+│      (.local/lib/libchdb.dylib — project-local)      │
 └──────────────────────────────────────────────────────┘
 ```
 
+### Query pipeline
+
+| Method | C API | Used for |
+|---|---|---|
+| `query()` | `chdb_query` (buffered) | SELECT, DDL, DML — all SQL |
+| `query(params:)` | `chdb_query_with_params` | Parameterised SQL |
+| `streamQuery()` | `chdb_stream_query` + `chdb_stream_fetch_result` | Large result sets — yields `ChdbResult` chunks via `AsyncThrowingStream` |
+| `ChdbConnection.query(sql:)` static | `chdb_query_cmdline` | Stateless one-shot queries, no connection |
+
+> **Note:** `query()` does not use streaming internally. chDB ≤ 26.5 cannot mix
+> `chdb_stream_query` with `chdb_query` on the same connection — a failed stream
+> attempt corrupts the query context. When chDB fixes this, `query()` will switch
+> to streaming with cancellation support and OOM-safe chunk accumulation.
+
 ### Concurrent Reads
-
-`query()` is `nonisolated` — it captures the connection handle from the actor
-(via `_readCtx()`, a fast microsecond read) and executes on a **multi-threaded**
-read pool (`coreCount` threads). Multiple SELECTs can run simultaneously:
-
-```swift
-// These 3 queries run concurrently on readPool:
-async let r1 = db.query("SELECT count(*) FROM hits")
-async let r2 = db.query("SELECT count(DISTINCT UserID) FROM hits")
-async let r3 = db.query("SELECT URL, count(*) FROM hits GROUP BY URL LIMIT 10")
-let results = try await (r1, r2, r3)  // completes in ~max(r1,r2,r3) time
-```
 
 ### Thread Safety
 
 | Mechanism | Problem Solved |
 |-----------|---------------|
-| **Actor** | Serializes writes (close, INSERT, CREATE) and connection state |
-| **nonisolated reads** | Reads bypass actor serialization — concurrent SELECTs |
-| **readPool (N threads)** | `chdb_query()` offloaded, multiple queries in parallel |
-| **writePool (1 thread)** | DDL/DML serialized, no write conflicts |
+| **Actor** | Serializes all access to the C connection — no concurrent `chdb_query()` calls |
+| **queryPool (1 thread)** | Offloads blocking C calls from Swift cooperative pool — single-threaded, serial |
 | **Alive flag** | Use-after-free prevented: checked before and after pool dispatch |
 | **Self capture** | Actor stays alive for the stream's full duration |
 | **ColumnarDecoder** | `as?` instead of `as!` — no crash on type mismatch |
@@ -264,10 +278,16 @@ let results = try await (r1, r2, r3)  // completes in ~max(r1,r2,r3) time
 
 ### ChdbEngine
 
-`.memory`, `.mergeTree`, `.replacingMergeTree`, `.summingMergeTree`,
+`.memory`, `.null`, `.generateRandom`, `.view`, `.materializedView`, `.alias`, `.dictionary`,
+`.mergeTree`, `.replacingMergeTree`, `.summingMergeTree`,
 `.aggregatingMergeTree`, `.collapsingMergeTree`, `.versionedCollapsingMergeTree`,
-`.graphiteMergeTree`, `.buffer`, `.set`, `.join`, `.view`,
-`.materializedView`, `.distributed`
+`.graphiteMergeTree`, `.log`, `.stripeLog`, `.file`, `.url`, `.merge`,
+`.executable`, `.kafka`, `.timeSeries`, `.windowView`, `.loop`,
+`.mySQL`, `.postgreSQL`, `.materializedPostgreSQL`, `.mongoDB`, `.sqlite`,
+`.redis`, `.odbc`, `.jdbc`, `.keeperMap`, `.ytSaurus`,
+`.s3`, `.s3Queue`, `.iceberg`, `.deltaLake`, `.paimon`,
+`.azureQueue`, `.objectStorage`, `.hudi`,
+`.embeddedRocksDB`, `.buffer`, `.set`, `.join`, `.distributed`
 
 ### ChdbFormat
 
@@ -275,6 +295,10 @@ let results = try await (r1, r2, r3)  // completes in ~max(r1,r2,r3) time
 `.prettyCompact`, `.vertical`, `.xml`, `.null`, `.tabSeparated`, `.values`
 
 ## 🐧 Linux
+
+For Linux, use the static library via `./setup.sh --current` (downloads `libchdb.a`
+into `Cchdb.artifactbundle/`). Or for dynamic: `./setup.sh --current-dynamic`
+(downloads `libchdb.so` into `.local/lib/`).
 
 ### Supported architectures
 
@@ -303,35 +327,18 @@ For arm64, edit the URL in the `Dockerfile` to `libchdb-linux-arm64.tar.gz`.
 ### Native installation
 
 ```bash
-# 1. Download libchdb for your architecture
-./setup.sh --linux-amd64   # or --linux-arm64
+# 1. Download libchdb for your architecture (dynamic)
+./setup.sh --current-dynamic
 
-# 2. Install system-wide
-sudo cp libchdb.so /usr/lib/
-sudo cp chdb.h /usr/include/
-sudo ldconfig
-
-# 3. Create pkg-config file
-sudo mkdir -p /usr/lib/pkgconfig
-cat | sudo tee /usr/lib/pkgconfig/chdb.pc << 'EOF'
-prefix=/usr
-exec_prefix=${prefix}
-libdir=${exec_prefix}/lib
-includedir=${prefix}/include
-Name: chdb
-Description: ClickHouse embedded database library
-Version: 1.0.0
-Libs: -L${libdir} -lchdb
-Cflags: -I${includedir}
-EOF
+# This downloads libchdb.so into .local/lib/ and writes pkg-config.
+# The build links it directly — no manual installation needed.
 
 # 4. Build
 swift build -c release
 ```
 
-The `Package.swift` auto-detects the platform:
-- **macOS** → `chdb.xcframework` (binary target)
-- **Linux** → `Clibchdb` (system library + `libchdb.so` via pkg-config)
+`Package.swift` computes the library path from `#filePath`:
+- The dylib/so is expected at `.local/lib/` inside the package.
 
 > ⚠️ `ChdbWebDemo` requires `Network.framework` (Apple) → macOS only.
 

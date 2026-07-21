@@ -65,10 +65,16 @@ print()
 
 // Row-by-row using typed accessors
 for i in 0..<block.rowCount {
-    let id    = block["id"]!.int32Values![i]
-    let name  = block["name"]!.stringValues![i]
-    let score = block["score"]!.doubleValues![i]
-    let active = block["active"]!.uint8Values![i] != 0
+    guard let idCol = block["id"], let nameCol = block["name"],
+          let scoreCol = block["score"], let activeCol = block["active"],
+          let ids = idCol.int32Values, let names = nameCol.stringValues,
+          let scores = scoreCol.doubleValues, let actives = activeCol.uint8Values else {
+        print("  ⚠️ missing or mismatched column"); continue
+    }
+    let id    = ids[i]
+    let name  = names[i]
+    let score = scores[i]
+    let active = actives[i] != 0
 
     print("  id=\(id)  name=\(name)  score=\(score)  active=\(active)")
 }

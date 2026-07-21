@@ -39,14 +39,17 @@ public struct ChdbResult: Sendable {
     /// - Parameter raw: The `chdb_result` pointer to consume.
     init(consuming raw: UnsafeMutablePointer<chdb_result>?) {
         self = ChdbResult(copying: raw)
-        if let raw {
-            chdb_destroy_query_result(raw)
-        }
+        _safeDestroy(raw)
     }
 
-    /// Creates a result by copying data from a raw C result pointer.
-    /// The C result is NOT freed — ownership remains with the caller.
-    /// - Parameter raw: The `chdb_result` pointer to read from.
+    /// Creates a result from already-decoded values (used by streaming accumulator).
+    init(rawData: Data?, elapsed: Double, rowsRead: UInt64, bytesRead: UInt64, errorMessage: String?) {
+        self._outputBuffer = rawData
+        self.elapsed = elapsed
+        self.rowsRead = rowsRead
+        self.bytesRead = bytesRead
+        self.errorMessage = errorMessage
+    }
     init(copying raw: UnsafeMutablePointer<chdb_result>?) {
         guard let raw else {
             self._outputBuffer = nil
@@ -79,4 +82,19 @@ public struct ChdbResult: Sendable {
         self.rowsRead = chdb_result_rows_read(raw)
         self.bytesRead = chdb_result_bytes_read(raw)
     }
+}
+
+// MARK: - Diagnostics
+
+/// Safely destroy a chdb_result.
+/// The chdb_destroy_query_result function handles freeing all internal resources
+/// regardless of which allocator was used internally.
+func _safeDestroy(_ raw: UnsafeMutablePointer<chdb_result>?) {
+    guard let raw else { return }
+    chdb_destroy_query_result(raw)
+}
+
+func _safeCancelStream(_ conn: chdb_connection, _ raw: UnsafeMutablePointer<chdb_result>?) {
+    guard let raw else { return }
+    chdb_stream_cancel_query(conn, raw)
 }

@@ -70,7 +70,7 @@ public struct ClickhouseBlock: Sendable {
             guard let namePtr = chc_swift_block_col_name(handle, i, &nameLen) else {
                 throw ClickhouseError.readFailed("nil column name at index \(i)")
             }
-            let name = String(cString: namePtr)
+            let name = String(decoding: Data(bytes: namePtr, count: nameLen), as: UTF8.self)
 
             // Column type (borrowed handle)
             guard let typeHandle = chc_swift_block_col_type(handle, i) else {
@@ -79,10 +79,14 @@ public struct ClickhouseBlock: Sendable {
             let type = ClickhouseType(cHandle: typeHandle)
 
             // Column data (borrowed handle)
-            guard let colHandle = chc_swift_block_col_data(handle, i) else {
+            let col: ClickhouseColumn
+            if let colHandle = chc_swift_block_col_data(handle, i) {
+                col = try ClickhouseColumn.decode(from: colHandle)
+            } else if nRows == 0 {
+                col = .nothing(rows: 0)
+            } else {
                 throw ClickhouseError.readFailed("nil column data at index \(i)")
             }
-            let col = try ClickhouseColumn.decode(from: colHandle)
 
             columns.append(ColumnInfo(name: name, type: type, column: col))
         }

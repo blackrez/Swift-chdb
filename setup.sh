@@ -1,11 +1,13 @@
 #!/bin/bash
 # Setup script for Swift-chDB — downloads chDB binaries + SPM artifact bundle.
 # Usage:
-#   ./setup.sh                          # download current platform variant
+#   ./setup.sh                          # download current platform variant (static)
+#   ./setup.sh --current-dynamic        # download current platform variant (dynamic)
 #   ./setup.sh --dataset                # download hits.parquet
 #   ./setup.sh --all                    # current variant + dataset
 #   ./setup.sh --build-bundle           # download ALL variants & build artifact bundle
 #   ./setup.sh --install                # Linux: install libchdb.so system-wide
+#   ./setup.sh --install-dynamic        # macOS: install libchdb.dylib system-wide
 
 set -euo pipefail
 
@@ -43,7 +45,10 @@ target_triple() {
 }
 
 lib_extension() {
-    echo "a"
+    case "$1" in
+        macos-*) echo "dylib" ;;
+        *)       echo "so" ;;
+    esac
 }
 
 download_variant() {
@@ -185,7 +190,71 @@ download_current() {
     cp "$tmpdir/libchdb.a" "Cchdb.artifactbundle/${variant}/"
     [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" .
     rm -rf "$tmpdir"
-    echo "✅ ${variant} → Cchdb.artifactbundle/${variant}/libchdb.so ($(ls -lh "Cchdb.artifactbundle/${variant}/libchdb.so" | awk '{print $5}'))"
+    echo "✅ ${variant} → Cchdb.artifactbundle/${variant}/libchdb.a ($(ls -lh "Cchdb.artifactbundle/${variant}/libchdb.a" | awk '{print $5}'))"
+}
+
+# ──────────────────────────────────────────────
+# Download dynamic variant (for local dev)
+# ──────────────────────────────────────────────
+
+download_current_dynamic() {
+    case "$OS" in
+        macos) variant="macos-${ARCH}" ;;
+        linux) variant="linux-${ARCH}" ;;
+        *) echo "❌ Unsupported platform: $OS $ARCH"; exit 1 ;;
+    esac
+    local suffix
+    suffix=$(variant_suffix "$variant")
+    local ext
+    case "$OS" in macos) ext="dylib" ;; linux) ext="so" ;; esac
+
+    local url="https://github.com/chdb-io/chdb-core/releases/download/v${CHDB_VERSION}/${suffix}-libchdb.tar.gz"
+    local tmpdir="/tmp/chdb-dynamic"
+    rm -rf "$tmpdir"
+    mkdir -p "$tmpdir"
+    echo >&2 "📥 Downloading ${variant} (dynamic)..."
+    curl -fsSL "$url" -o "/tmp/chdb-dynamic.tar.gz"
+    tar xzf "/tmp/chdb-dynamic.tar.gz" -C "$tmpdir"
+    rm -f "/tmp/chdb-dynamic.tar.gz"
+
+    # macOS releases may ship as .so — rename to .dylib
+    if [ "$OS" = "macos" ] && [ -f "$tmpdir/libchdb.so" ]; then
+        mv "$tmpdir/libchdb.so" "$tmpdir/libchdb.${ext}"
+    fi
+
+    local libfile="$tmpdir/libchdb.${ext}"
+    if [ ! -f "$libfile" ]; then
+        echo "❌ Library not found in downloaded archive (expected libchdb.${ext})"
+        rm -rf "$tmpdir"
+        exit 1
+    fi
+
+    mkdir -p .local/lib .local/include .local/lib/pkgconfig
+    cp "$libfile" .local/lib/
+    [ -f "$tmpdir/chdb.h" ] && cp "$tmpdir/chdb.h" .local/include/
+
+    # Fix install name to absolute path — no rpath needed at runtime
+    if [ "$OS" = "macos" ]; then
+        install_name_tool -id "${prefix}/lib/libchdb.dylib" .local/lib/libchdb.dylib
+    fi
+
+    # Write pkg-config file
+    local prefix="${PWD}/.local"
+    cat > .local/lib/pkgconfig/chdb.pc << EOF
+prefix=${prefix}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: chdb
+Description: chDB embedded OLAP SQL engine
+Version: ${CHDB_VERSION}
+Libs: -L\${libdir} -lchdb
+Cflags: -I\${includedir}
+EOF
+
+    rm -rf "$tmpdir"
+    echo "✅ ${variant} dynamic → .local/lib/libchdb.${ext} ($(ls -lh ".local/lib/libchdb.${ext}" | awk '{print $5}'))"
 }
 
 # ──────────────────────────────────────────────
@@ -221,8 +290,50 @@ EOF
 }
 
 # ──────────────────────────────────────────────
-# Dataset
+# macOS — install libchdb.dylib system-wide + pkg-config (dynamic library)
 # ──────────────────────────────────────────────
+
+install_macos_dynamic() {
+    local variant="macos-${ARCH}"
+    echo "📥 Downloading dynamic library for ${variant}..."
+    local url="https://github.com/chdb-io/chdb-core/releases/download/v${CHDB_VERSION}/${variant}-libchdb.tar.gz"
+    local tmpdir="/tmp/chdb-dynamic"
+    rm -rf "$tmpdir"
+    mkdir -p "$tmpdir"
+    curl -fsSL "$url" -o "/tmp/chdb-dynamic.tar.gz"
+    tar xzf "/tmp/chdb-dynamic.tar.gz" -C "$tmpdir"
+    rm -f "/tmp/chdb-dynamic.tar.gz"
+
+    # Rename .so to .dylib (macOS convention)
+    if [ -f "$tmpdir/libchdb.so" ]; then
+        mv "$tmpdir/libchdb.so" "$tmpdir/libchdb.dylib"
+    fi
+
+    local prefix="/usr/local"
+    echo "📦 Installing libchdb.dylib → ${prefix}/lib/ ..."
+    sudo mkdir -p "${prefix}/lib" "${prefix}/include" "${prefix}/lib/pkgconfig"
+    sudo cp "$tmpdir/libchdb.dylib" "${prefix}/lib/"
+    [ -f "$tmpdir/chdb.h" ] && sudo cp "$tmpdir/chdb.h" "${prefix}/include/"
+    sudo tee "${prefix}/lib/pkgconfig/chdb.pc" > /dev/null << EOF
+prefix=${prefix}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: chdb
+Description: chDB embedded OLAP SQL engine
+Version: ${CHDB_VERSION}
+Libs: -L\${libdir} -lchdb
+Cflags: -I\${includedir}
+EOF
+    sudo install_name_tool -id "${prefix}/lib/libchdb.dylib" "${prefix}/lib/libchdb.dylib" 2>/dev/null || true
+    rm -rf "$tmpdir"
+    echo "✅ chDB dynamic library installed (${prefix}/lib/libchdb.dylib)"
+    echo "   pkg-config: ${prefix}/lib/pkgconfig/chdb.pc"
+    echo ""
+    echo "Use with: swift build -Xswiftc -I${prefix}/include -Xlinker -L${prefix}/lib"
+    echo "Or via pkg-config: swift build -Xswiftc \$(pkg-config --cflags chdb) -Xlinker \$(pkg-config --libs chdb)"
+}
 
 download_dataset() {
     local file="hits.parquet"
@@ -238,9 +349,11 @@ download_dataset() {
 
 case "${1:-auto}" in
     auto|--current)          download_current ;;
+    --current-dynamic|--dynamic) download_current_dynamic ;;
     --dataset|dataset)       download_dataset ;;
     --all|all)               download_current; download_dataset ;;
     --build-bundle)          build_artifactbundle ;;
-    --install)               install_linux ;;
-    *) echo "Usage: $0 [--current|--dataset|--all|--build-bundle|--install]"; exit 1 ;;
+    --install)               if [ "$OS" = "linux" ]; then install_linux; elif [ "$OS" = "macos" ]; then install_macos_dynamic; else echo "Unsupported OS: $OS"; fi ;;
+    --install-dynamic)       install_macos_dynamic ;;
+    *) echo "Usage: $0 [--current|--current-dynamic|--dataset|--all|--build-bundle|--install|--install-dynamic]"; exit 1 ;;
 esac

@@ -114,4 +114,71 @@ struct ChdbTests {
         #expect(result.rowsRead >= 1000)
         await db.close()
     }
+
+    // MARK: - Query pipeline tests (DDL, DML, formats)
+
+    @Test("DDL CREATE TABLE and INSERT")
+    func ddlCreateTable() async throws {
+        let db = try Chdb()
+        _ = try await db.query("CREATE TABLE IF NOT EXISTS test_ddl (id Int32) ENGINE = Memory")
+        _ = try await db.query("INSERT INTO test_ddl VALUES (1), (2), (3)")
+
+        let result = try await db.query("SELECT * FROM test_ddl ORDER BY id", format: .csv)
+        #expect(result.rowsRead == 3)
+        #expect(result.text?.contains("1") == true)
+
+        _ = try await db.query("DROP TABLE test_ddl")
+        await db.close()
+    }
+
+    @Test("Native format returns binary data")
+    func nativeFormat() async throws {
+        let db = try Chdb()
+        _ = try await db.query("CREATE TABLE test_native (id Int32, name String) ENGINE = Memory")
+        _ = try await db.query("INSERT INTO test_native VALUES (1, 'alice'), (2, 'bob')")
+
+        let result = try await db.query("SELECT * FROM test_native ORDER BY id", format: .native)
+        #expect(result.rawData != nil)
+        #expect(result.rowsRead == 2)
+
+        _ = try await db.query("DROP TABLE test_native")
+        await db.close()
+    }
+
+    @Test("Error propagation on invalid SQL")
+    func errorPropagation() async throws {
+        let db = try Chdb()
+        do {
+            _ = try await db.query("SELECT * FROM nonexistent_table_xyz")
+            Issue.record("Expected ChdbError to be thrown")
+        } catch {
+            #expect(error is ChdbError)
+        }
+        await db.close()
+    }
+
+    @Test("Empty result set")
+    func emptyResult() async throws {
+        let db = try Chdb()
+        _ = try await db.query("CREATE TABLE test_empty (id Int32) ENGINE = Memory")
+
+        let result = try await db.query("SELECT * FROM test_empty", format: .csv)
+        #expect(result.rowsRead == 0)
+
+        _ = try await db.query("DROP TABLE test_empty")
+        await db.close()
+    }
+
+    @Test("JSONEachRow format")
+    func jsonFormat() async throws {
+        let db = try Chdb()
+        let result = try await db.query(
+            "SELECT number FROM system.numbers LIMIT 3",
+            format: .jsonEachRow
+        )
+        #expect(result.rowsRead == 3)
+        #expect(result.text != nil)
+        #expect(result.text!.contains(#""number":"#))
+        await db.close()
+    }
 }

@@ -217,17 +217,17 @@ extension ClickhouseColumn {
 
 extension ClickhouseColumn {
     private func decodeFixedInt<T: FixedWidthInteger>(_: T.Type, size: Int) -> [T]? {
-        guard case .fixed(let data, size) = self, size == MemoryLayout<T>.size else { return nil }
+        guard case .fixed(let data, let boundSize) = self, boundSize == size, boundSize == MemoryLayout<T>.size else { return nil }
         return data.withUnsafeBytes { buf in
             guard let base = buf.baseAddress else { return [] }
-            return (0..<(data.count / size)).map { base.load(fromByteOffset: $0 * size, as: T.self).littleEndian }
+            return (0..<(data.count / boundSize)).map { base.load(fromByteOffset: $0 * boundSize, as: T.self).littleEndian }
         }
     }
     private func decodeFixedFloat<T>(_: T.Type, size: Int) -> [T]? {
-        guard case .fixed(let data, size) = self, size == MemoryLayout<T>.size else { return nil }
+        guard case .fixed(let data, let boundSize) = self, boundSize == size, boundSize == MemoryLayout<T>.size else { return nil }
         return data.withUnsafeBytes { buf in
             guard let base = buf.baseAddress else { return [] }
-            return (0..<(data.count / size)).map { base.load(fromByteOffset: $0 * size, as: T.self) }
+            return (0..<(data.count / boundSize)).map { base.load(fromByteOffset: $0 * boundSize, as: T.self) }
         }
     }
 
@@ -238,13 +238,35 @@ extension ClickhouseColumn {
     public var uint64Values: [UInt64]? { decodeFixedInt(UInt64.self, size: 8) }
     public var floatValues: [Float]? { decodeFixedFloat(Float.self, size: 4) }
     public var doubleValues: [Double]? { decodeFixedFloat(Double.self, size: 8) }
-    public var stringValues: [String]? { guard case .string(let s) = self else { return nil }; return s }
+    public var stringValues: [String]? {
+        switch self {
+        case .string(let s): return s
+        case .nullable(_, .string(let s)): return s
+        case .lowCardinality(let keys, .string(let dict)):
+            return keys.map { dict[$0] }
+        case .lowCardinality(let keys, .nullable(_, .string(let dict))):
+            return keys.map { dict[$0] }
+        default: return nil
+        }
+    }
 
     public var nullableUInt64Values: [UInt64?]? {
         guard case .nullable(let nulls, let inner) = self, case .fixed(let data, 8) = inner else { return nil }
         return data.withUnsafeBytes { buf in
             guard let base = buf.baseAddress else { return [] }
             return (0..<(data.count / 8)).map { i in nulls[i] ? nil : base.load(fromByteOffset: i * 8, as: UInt64.self).littleEndian }
+        }
+    }
+
+    /// Access nullable string values.
+    /// Works for `Nullable(String)` and `LowCardinality(Nullable(String))`.
+    public var nullableStringValues: [String?]? {
+        switch self {
+        case .nullable(let nulls, .string(let s)):
+            return zip(nulls, s).map { $0 ? nil : $1 }
+        case .lowCardinality(let keys, .nullable(let nulls, .string(let dict))):
+            return keys.map { key in nulls[key] ? nil : dict[key] }
+        default: return nil
         }
     }
 }
@@ -301,7 +323,7 @@ private func _valueAt(_ base: UnsafeRawPointer, offset: Int, size: Int, type: Cl
     case .uint16:  return Int(UInt16(littleEndian: ptr.load(as: UInt16.self)))
     case .uint32:  return Int(UInt32(littleEndian: ptr.load(as: UInt32.self)))
     case .uint64:  return NSNumber(value: UInt64(littleEndian: ptr.load(as: UInt64.self)))
-    case .uint128, .uint256: return _uint128String(ptr, size: size)
+    case .uint128, .uint256: return _int128String(ptr, size: size)
 
     // Floats
     case .float32: return Double(ptr.load(as: Float.self))
@@ -376,10 +398,6 @@ private func _int128String(_ ptr: UnsafeRawPointer, size: Int) -> String {
     return "0x" + data.reversed().map { String(format: "%02x", $0) }.joined()
 }
 
-private func _uint128String(_ ptr: UnsafeRawPointer, size: Int) -> String {
-    return _int128String(ptr, size: size)
-}
-
 private func _decimalString(_ ptr: UnsafeRawPointer, size: Int, type: ClickhouseType) -> String {
     // Parse the scale from the type name (e.g. "Decimal(9,2)" → 2)
     let scale = _decimalScale(from: type.name)
@@ -398,14 +416,13 @@ private func _decimalString(_ ptr: UnsafeRawPointer, size: Int, type: Clickhouse
 }
 
 private func _decimalScale(from typeName: String) -> Int {
-    guard let paren = typeName.firstIndex(of: "("),
+    guard let _ = typeName.firstIndex(of: "("),
           let comma = typeName.firstIndex(of: ","),
           let close = typeName.firstIndex(of: ")") else { return 0 }
     return Int(typeName[typeName.index(after: comma)..<close].trimmingCharacters(in: .whitespaces)) ?? 0
 }
 
 private func _fixedStringValue(_ ptr: UnsafeRawPointer, size: Int) -> String {
-    let end = ptr.advanced(by: size)
     var len = 0
     while len < size, ptr.load(fromByteOffset: len, as: UInt8.self) != 0 { len += 1 }
     return String(decoding: Data(bytes: ptr, count: len), as: UTF8.self)
@@ -437,10 +454,6 @@ private func _enumString(_ ptr: UnsafeRawPointer, size: Int, type: ClickhouseTyp
     // Enum values are stored as their integer representation
     let val: Int = size == 1 ? Int(ptr.load(as: Int8.self)) : Int(Int16(littleEndian: ptr.load(as: Int16.self)))
     return "enum:\(val)"
-}
-
-private func pow(_ base: Double, _ exp: Int) -> Double {
-    (0..<exp).reduce(1.0) { r, _ in r * base }
 }
 
 // MARK: - ColumnarDecoder (Phase 3 — native Decodable, zero JSON)
@@ -566,7 +579,6 @@ struct ColumnarKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol wh
     func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { .init(try decode(Int.self,   forKey: key)) }
 
     func decode<T>(_ type: T.Type, forKey key: Key) throws -> T where T: Decodable {
-        let c = try colInfo(key)
         // Build a sub-decoder for compound types
         let sub = ColumnarDecoder(block: block, rowIndex: rowIndex, codingPath: codingPath + [key])
         // For the given key, try to decode the column value directly

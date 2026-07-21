@@ -72,9 +72,13 @@ for row in sampleRows {
 
 // Also decode a scalar value using .native format + ClickhouseBlock
 let countResult = try await db.query("SELECT count() AS cnt FROM stream_demo", format: .native)
-let countBlock = try! ClickhouseBlock.read(from: countResult.rawData!)!
-let count = countBlock["cnt"]?.uint64Values?.first ?? 0
-print("  Total rows in table: \(count)\n")
+if let rawData = countResult.rawData,
+   let countBlock = try ClickhouseBlock.read(from: rawData) {
+    let count = countBlock["cnt"]?.uint64Values?.first ?? 0
+    print("  Total rows in table: \(count)\n")
+} else {
+    print("  ⚠️ failed to read count result")
+}
 
 // MARK: - Streaming query demo
 
